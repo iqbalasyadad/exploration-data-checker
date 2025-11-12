@@ -1579,14 +1579,14 @@ class Seismic2DDetailPopupWindow:
                     seismic_data[i, :] = f.trace[i][:]
                 
                 # Normalize data for better visualization
-                max_amp = np.max(np.abs(seismic_data))
-                if max_amp > 0:
-                    seismic_data = seismic_data / max_amp
-                else:
-                    messagebox.showwarning("Warning", "Seismic data has zero amplitude!")
+                # max_amp = np.max(np.abs(seismic_data))
+                # if max_amp > 0:
+                #     seismic_data = seismic_data / max_amp
+                # else:
+                #     messagebox.showwarning("Warning", "Seismic data has zero amplitude!")
                 
                 # Create time axis
-                time_axis = f.samples / 1000  # Convert to seconds
+                # time_axis = f.samples / 1000  # Convert to seconds
             
             # Remove loading message
             loading_label.destroy()
@@ -1599,15 +1599,15 @@ class Seismic2DDetailPopupWindow:
                 seismic_data.T,
                 aspect='auto',
                 cmap='seismic',
-                vmin=-1, 
-                vmax=1,
-                extent=[0, n_traces, time_axis[-1], time_axis[0]],
+                # vmin=-1, 
+                # vmax=1,
+                # extent=[0, n_traces, time_axis[-1], time_axis[0]],
                 interpolation='bilinear'
             )
             
             # Labels and title
             ax.set_xlabel('Trace Number', fontsize=11, fontweight='bold')
-            ax.set_ylabel('Time (s)', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Time (ms)', fontsize=11, fontweight='bold')
             ax.set_title(
                 f'2D Seismic Section - {os.path.basename(self.filepath)}', 
                 fontsize=12, 
@@ -1619,7 +1619,7 @@ class Seismic2DDetailPopupWindow:
             ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
             
             # Add colorbar with better formatting
-            cbar = plt.colorbar(im, ax=ax, label='Normalized Amplitude', pad=0.02)
+            cbar = plt.colorbar(im, ax=ax, label='Amplitude', pad=0.02)
             cbar.ax.tick_params(labelsize=9)
             
             # Adjust layout
@@ -1741,6 +1741,9 @@ class Seismic2DQCTab:
         # Bottom button
         btn_frame = ttk.Frame(self.frame)
         btn_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        self.export_btn = ttk.Button(btn_frame, text="Export", command=self._export_to_csv)
+        self.export_btn.pack(side=tk.RIGHT, padx=5)
         
         self.clear_btn = ttk.Button(btn_frame, text="Clear Table", command=self.clear_table)
         self.clear_btn.pack(side=tk.RIGHT, padx=5)
@@ -1879,6 +1882,161 @@ class Seismic2DQCTab:
             
         finally:
             self.clear_btn.config(state=tk.NORMAL)
+
+    def _export_to_csv(self):
+        """Export all seismic files and their comprehensive parameters to CSV"""
+        if not self.file_paths:
+            messagebox.showwarning("No Data", "No data to export. Please scan files first.")
+            return
+        
+        try:
+            # Ask user for save location
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialfile="seismic_2d_qc_report.csv"
+            )
+            
+            if not filepath:
+                return
+            
+            # Disable export button during processing
+            self.export_btn.config(state=tk.DISABLED)
+            self.status_var.set("Exporting data to CSV...")
+            self.frame.update()
+            
+            import csv
+            import datetime
+            
+            # Open CSV file for writing
+            with open(filepath, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                
+                # Write header row with all comprehensive parameters
+                headers = [
+                    'Filename',
+                    'Line Name',
+                    'Format',
+                    'Trace Count',
+                    'Samples per Trace',
+                    'Sample Interval (ms)',
+                    'CDP Range',
+                    'Coordinate Range X',
+                    'Coordinate Range Y',
+                    'Amplitude Range',
+                    'RMS Amplitude',
+                    'Nyquist Frequency',
+                    'Dominant Frequency',
+                    'Null/Dead Traces',
+                    'Trace Length Uniformity',
+                    'Clipping Detected',
+                    'Average Trace Spacing (m)',
+                    'Min Trace Spacing (m)',
+                    'Max Trace Spacing (m)',
+                    'Straight Line Distance (m)',
+                    'Est. Total Line Length (km)',
+                    'Line Sinuosity',
+                    'Line Shape',
+                    'Coordinate Order',
+                    'Binary',
+                    'Format Code',
+                    'Trace Sorting',
+                    'Endian Type',
+                    'Measurement System',
+                    'Signal Std Dev',
+                    'Signal Mean',
+                    'Skewness',
+                    'Kurtosis',
+                    'Est. SNR (dB)'
+                ]
+                
+                writer.writerow(headers)
+                
+                # Process each file
+                total_files = len(self.file_paths)
+                processed = 0
+                
+                scanner = SEGYFileScanner(self.folder_var.get())
+                
+                for item_id, file_path in self.file_paths.items():
+                    try:
+                        # Update progress
+                        processed += 1
+                        self.status_var.set(f"Exporting {processed}/{total_files}: {os.path.basename(file_path)}")
+                        self.frame.update()
+                        
+                        # Open SEGY file
+                        segy = scanner.read_segy_file(file_path)
+                        if not segy:
+                            # Write error row
+                            writer.writerow([os.path.basename(file_path)] + ['Error reading file'] * (len(headers) - 1))
+                            continue
+                        
+                        # Get comprehensive information
+                        info = self.validator.get_comprehensive_info(segy)
+                        
+                        # Close file
+                        segy.close()
+                        
+                        # Build data row matching headers
+                        row_data = [
+                            info.get('Filename', 'N/A'),
+                            info.get('Line Name', 'N/A'),
+                            info.get('Format', 'N/A'),
+                            info.get('Trace Count', 'N/A'),
+                            info.get('Samples per Trace', 'N/A'),
+                            info.get('Sample Interval (ms)', 'N/A'),
+                            info.get('CDP Range', 'N/A'),
+                            info.get('Coordinate Range X', 'N/A'),
+                            info.get('Coordinate Range Y', 'N/A'),
+                            info.get('Amplitude Range', 'N/A'),
+                            info.get('RMS Amplitude', 'N/A'),
+                            info.get('Nyquist Frequency', 'N/A'),
+                            info.get('Dominant Frequency', 'N/A'),
+                            info.get('Null/Dead Traces', 'N/A'),
+                            info.get('Trace Length Uniformity', 'N/A'),
+                            info.get('Clipping Detected', 'N/A'),
+                            info.get('Average Trace Spacing (m)', 'N/A'),
+                            info.get('Min Trace Spacing (m)', 'N/A'),
+                            info.get('Max Trace Spacing (m)', 'N/A'),
+                            info.get('Straight Line Distance (m)', 'N/A'),
+                            info.get('Est. Total Line Length (km)', 'N/A'),
+                            info.get('Line Sinuosity', 'N/A'),
+                            info.get('Line Shape', 'N/A'),
+                            info.get('Coordinate Order', 'N/A'),
+                            info.get('Binary', 'N/A'),
+                            info.get('Format Code', 'N/A'),
+                            info.get('Trace Sorting', 'N/A'),
+                            info.get('Endian Type', 'N/A'),
+                            info.get('Measurement System', 'N/A'),
+                            info.get('Signal Std Dev', 'N/A'),
+                            info.get('Signal Mean', 'N/A'),
+                            info.get('Skewness', 'N/A'),
+                            info.get('Kurtosis', 'N/A'),
+                            info.get('Est. SNR (dB)', 'N/A')
+                        ]
+                        
+                        writer.writerow(row_data)
+                        
+                    except Exception as e:
+                        # Write error row for this file
+                        writer.writerow([os.path.basename(file_path), f'Error: {str(e)}'] + ['N/A'] * (len(headers) - 2))
+                
+                # Write metadata at the end
+                writer.writerow([])
+                writer.writerow(['Report Generated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                writer.writerow(['Total Files Processed', total_files])
+                writer.writerow(['Source Folder', self.folder_var.get()])
+            
+            self.status_var.set(f"Export complete: {total_files} files exported to CSV.")
+            messagebox.showinfo("Export Successful", f"Data exported successfully to:\n{filepath}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export to CSV:\n{str(e)}")
+            self.status_var.set("Export failed.")
+            
+        finally:
+            self.export_btn.config(state=tk.NORMAL)
 
 # ===================== SEISMIC 3D QC TAB =====================
 

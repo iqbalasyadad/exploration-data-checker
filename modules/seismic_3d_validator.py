@@ -22,45 +22,64 @@ class Seismic3DValidator:
             "crossline_range": "Crossline Range"
         }
     
-    def get_comprehensive_qc(self, filepath):
+    def get_comprehensive_info(self, segy):
         """Get comprehensive QC information from 3D SEGY file"""
         qc_info = {}
         
-        try:
-            with segyio.open(filepath, "r", ignore_geometry=False, strict=False) as segy:
-                segy.mmap()
+        # try:
+        #     with segyio.open(filepath, "r", ignore_geometry=False, strict=False) as segy:
+        #         segy.mmap()
                 
-                # Basic Information
-                qc_info.update(self._extract_basic_info(segy, filepath))
+        #         # Basic Information
+        #         qc_info.update(self._extract_basic_info(segy, filepath))
                 
-                # 3D Geometry
-                qc_info.update(self._extract_3d_geometry(segy))
+        #         # 3D Geometry
+        #         qc_info.update(self._extract_3d_geometry(segy))
                 
-                # Signal Analysis
-                qc_info.update(self._extract_signal_info(segy))
+        #         # Signal Analysis
+        #         qc_info.update(self._extract_signal_info(segy))
                 
-                # Trace Quality
-                qc_info.update(self._extract_trace_quality(segy))
+        #         # Trace Quality
+        #         qc_info.update(self._extract_trace_quality(segy))
                 
-                # Binary Header
-                qc_info.update(self._extract_binary_header(segy))
+        #         # Binary Header
+        #         qc_info.update(self._extract_binary_header(segy))
                 
-                # Volume Statistics
-                qc_info.update(self._extract_volume_stats(segy))
+        #         # Volume Statistics
+        #         qc_info.update(self._extract_volume_stats(segy))
+
+        try:    
+            # Basic Information
+            qc_info.update(self._extract_basic_info(segy))
+            
+            # 3D Geometry
+            qc_info.update(self._extract_3d_geometry(segy))
+            
+            # Signal Analysis
+            qc_info.update(self._extract_signal_info(segy))
+            
+            # Trace Quality
+            qc_info.update(self._extract_trace_quality(segy))
+            
+            # Binary Header
+            qc_info.update(self._extract_binary_header(segy))
+            
+            # Volume Statistics
+            qc_info.update(self._extract_volume_stats(segy))
                 
         except Exception as e:
             qc_info["Error"] = str(e)
         
         return qc_info
     
-    def _extract_basic_info(self, segy, filepath):
+    def _extract_basic_info(self, segy):
         """Extract basic file information"""
         info = {}
         try:
-            info["Filename"] = os.path.basename(filepath)
+            # info["Filename"] = os.path.basename(filepath)
             # info["Survey Name"] = self._extract_survey_name(segy)
-            info["Full Path"] = filepath
-            
+            # info["Full Path"] = filepath
+            info["Filename"] = os.path.basename(segy._filename) if hasattr(segy, '_filename') else "N/A"
             info["Total Traces"] = str(segy.tracecount)
             
             try:

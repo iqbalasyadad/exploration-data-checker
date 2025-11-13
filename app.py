@@ -9,53 +9,11 @@ import csv
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
+
+from modules.file_scanner import LASFileScanner, SEGYFileScanner
 from modules.curve_validator import CurveValidator
 from modules.seismic_2d_validator import Seismic2DValidator
 from modules.seismic_3d_validator import Seismic3DValidator
-
-
-# ===================== LAS FILE SCANNER (OOP) =====================
-
-class LASFileScanner:
-    """Handles finding and reading LAS files from directories"""
-    
-    def __init__(self, root_folder, filter_text="", filter_enabled=False):
-        self.root_folder = root_folder
-        self.filter_text = filter_text
-        self.filter_enabled = filter_enabled
-        self.las_files = []
-    
-    def find_all_las_files(self):
-        """Recursively find all .las files in root folder"""
-        self.las_files = []
-        if not os.path.isdir(self.root_folder):
-            return []
-        
-        for dirpath, dirnames, filenames in os.walk(self.root_folder):
-            for filename in filenames:
-                if filename.lower().endswith(".las"):
-                    # Apply custom filter if enabled
-                    if self.filter_enabled and self.filter_text:
-                        if self.filter_text.upper() not in filename.upper():
-                            continue
-                    
-                    full_path = os.path.join(dirpath, filename)
-                    self.las_files.append(full_path)
-        
-        return self.las_files
-    
-    @staticmethod
-    def read_las_file(filepath):
-        """Safely read a LAS file and return lasio object"""
-        try:
-            las = lasio.read(filepath)
-            if not hasattr(las, "curves") or len(las.curves) == 0:
-                print(f"File {filepath} has no curves or invalid LAS format")
-                return None
-            return las
-        except Exception as e:
-            print(f"Failed to read {filepath}: {e}")
-            return None
 
 
 # ===================== LOG DETAIL POPUP WINDOW =====================
@@ -938,48 +896,6 @@ class LogDataCheckerTab:
         filter_status = f"ON ('{filter_text}')" if filter_enabled and filter_text else "OFF"
         self.status_var.set(f"Settings updated: {', '.join(self.curve_config.keys())} | Filter: {filter_status}")
 
-
-
-
-# ===================== SEGY FILE SCANNER (OOP) =====================
-
-class SEGYFileScanner:
-    """Handles finding and reading SEGY files from directories"""
-    
-    def __init__(self, root_folder, filter_text="", filter_enabled=False):
-        self.root_folder = root_folder
-        self.filter_text = filter_text
-        self.filter_enabled = filter_enabled
-        self.segy_files = []
-    
-    def find_all_segy_files(self):
-        """Recursively find all .sgy/.segy files in root folder"""
-        self.segy_files = []
-        if not os.path.isdir(self.root_folder):
-            return []
-        
-        for dirpath, dirnames, filenames in os.walk(self.root_folder):
-            for filename in filenames:
-                if filename.lower().endswith((".sgy", ".segy")):
-                    if self.filter_enabled and self.filter_text:
-                        if self.filter_text.upper() not in filename.upper():
-                            continue
-                    
-                    full_path = os.path.join(dirpath, filename)
-                    self.segy_files.append(full_path)
-        
-        return self.segy_files
-    
-    @staticmethod
-    def read_segy_file(filepath):
-        """Safely read a SEGY file and return segyio object"""
-        try:
-            segy = segyio.open(filepath, ignore_geometry=True)
-            return segy
-        except Exception as e:
-            print(f"Failed to read {filepath}: {e}")
-            return None
-
 # ===================== SEISMIC 3D DETAIL POPUP WINDOW (COMPREHENSIVE) =====================
 
 class Seismic3DDetailPopupWindow:
@@ -993,11 +909,12 @@ class Seismic3DDetailPopupWindow:
         self.filepath = filepath
         self.validator = validator
         
-        # Get comprehensive QC information
-        self.qc_info = validator.get_comprehensive_qc(filepath)
-        
         # Read SEGY file for plot ranges
-        segy = SEGYFileScanner.read_segy_file(filepath)
+        segy = SEGYFileScanner.read_segy_file(filepath, '3D')
+
+        # Get comprehensive QC information
+        self.qc_info = validator.get_comprehensive_info(segy)
+
         if segy:
             try:
                 self.ilines = list(segy.ilines)
@@ -1419,7 +1336,7 @@ class Seismic2DDetailPopupWindow:
         self.validator = validator
         
         # Read SEGY file
-        segy = SEGYFileScanner.read_segy_file(filepath)
+        segy = SEGYFileScanner.read_segy_file(filepath, '2D')
         if not segy:
             messagebox.showerror("Error", f"Failed to read SEGY file:\n{filepath}")
             self.popup.destroy()
@@ -1752,7 +1669,7 @@ class Seismic2DQCTab:
         """Setup treeview columns"""
         columns = [
             "File", "Line Name", "Traces", "Samples", "Interval (ms)", 
-            "Length (ms)", "Format", "CDP Range"
+            "Length (ms)", "Format"
         ]
         
         self.tree["columns"] = columns
@@ -1765,7 +1682,6 @@ class Seismic2DQCTab:
             "Interval (ms)": 100,
             "Length (ms)": 100,
             "Format": 100,
-            "CDP/SP": 120
         }
         
         for col in columns:
@@ -1808,7 +1724,7 @@ class Seismic2DQCTab:
         self.frame.update()
         
         for i, filepath in enumerate(segy_files):
-            segy = scanner.read_segy_file(filepath)
+            segy = scanner.read_segy_file(filepath, '2D')
             if not segy:
                 continue
             
@@ -1905,9 +1821,6 @@ class Seismic2DQCTab:
             self.status_var.set("Exporting data to CSV...")
             self.frame.update()
             
-            import csv
-            import datetime
-            
             # Open CSV file for writing
             with open(filepath, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -1966,7 +1879,7 @@ class Seismic2DQCTab:
                         self.frame.update()
                         
                         # Open SEGY file
-                        segy = scanner.read_segy_file(file_path)
+                        segy = scanner.read_segy_file(file_path, '2D')
                         if not segy:
                             # Write error row
                             writer.writerow([os.path.basename(file_path)] + ['Error reading file'] * (len(headers) - 1))
@@ -2023,10 +1936,10 @@ class Seismic2DQCTab:
                         writer.writerow([os.path.basename(file_path), f'Error: {str(e)}'] + ['N/A'] * (len(headers) - 2))
                 
                 # Write metadata at the end
-                writer.writerow([])
-                writer.writerow(['Report Generated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
-                writer.writerow(['Total Files Processed', total_files])
-                writer.writerow(['Source Folder', self.folder_var.get()])
+                # writer.writerow([])
+                # writer.writerow(['Report Generated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                # writer.writerow(['Total Files Processed', total_files])
+                # writer.writerow(['Source Folder', self.folder_var.get()])
             
             self.status_var.set(f"Export complete: {total_files} files exported to CSV.")
             messagebox.showinfo("Export Successful", f"Data exported successfully to:\n{filepath}")
@@ -2105,6 +2018,9 @@ class Seismic3DQCTab:
         btn_frame = ttk.Frame(self.frame)
         btn_frame.pack(fill="x", padx=10, pady=(0, 10))
         
+        self.export_btn = ttk.Button(btn_frame, text="Export", command=self._export_to_csv)
+        self.export_btn.pack(side=tk.RIGHT, padx=5)
+
         self.clear_btn = ttk.Button(btn_frame, text="Clear Table", command=self.clear_table)
         self.clear_btn.pack(side=tk.RIGHT, padx=5)
     
@@ -2168,7 +2084,7 @@ class Seismic3DQCTab:
         self.frame.update()
         
         for i, filepath in enumerate(segy_files):
-            segy = scanner.read_segy_file(filepath)
+            segy = scanner.read_segy_file(filepath, '3D')
             if not segy:
                 continue
             
@@ -2243,6 +2159,135 @@ class Seismic3DQCTab:
             
         finally:
             self.clear_btn.config(state=tk.NORMAL)
+
+
+    def _export_to_csv(self):
+        """Export all seismic files and their comprehensive parameters to CSV"""
+        if not self.file_paths:
+            messagebox.showwarning("No Data", "No data to export. Please scan files first.")
+            return
+        
+        try:
+            # Ask user for save location
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialfile="seismic_3d_qc_report.csv"
+            )
+            
+            if not filepath:
+                return
+            
+            # Disable export button during processing
+            self.export_btn.config(state=tk.DISABLED)
+            self.status_var.set("Exporting data to CSV...")
+            self.frame.update()
+            
+            # Open CSV file for writing
+            with open(filepath, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                
+                # Write header row with all comprehensive parameters
+                headers = [
+                    'Filename',
+                    'Total Traces',
+                    'Samples per Trace',
+                    'Sample Interval (ms)',
+                    'Trace Length (ms)',
+                    'Time Range',
+                    'Data Format',
+                    'Sorting',
+                    'Inline Range',
+                    'Crossline Range',
+                    'Estimated Volume',
+                    'Amplitude Range',
+                    'Amolitude Mean',
+                    'Amplitude Std Dev',
+                    'Nyquist Frequency (Hz)',
+                    'Dominant Frequency (Hz)',
+                    'Null/Dead Traces',
+                    'Valid Traces',
+                    'Binary Format Code',
+                    'Trace Sorting',
+                    'Endian Type',
+                    'Measurement System'
+                ]
+                
+                writer.writerow(headers)
+                
+                # Process each file
+                total_files = len(self.file_paths)
+                processed = 0
+                
+                scanner = SEGYFileScanner(self.folder_var.get())
+                
+                for item_id, file_path in self.file_paths.items():
+                    try:
+                        # Update progress
+                        processed += 1
+                        self.status_var.set(f"Exporting {processed}/{total_files}: {os.path.basename(file_path)}")
+                        self.frame.update()
+                        
+                        # Open SEGY file
+                        segy = scanner.read_segy_file(file_path, '3D')
+                        if not segy:
+                            # Write error row
+                            writer.writerow([os.path.basename(file_path)] + ['Error reading file'] * (len(headers) - 1))
+                            continue
+
+                        # Get comprehensive information
+                        info = self.validator.get_comprehensive_info(segy)
+
+                        # Close file
+                        segy.close()
+                        
+                        # Build data row matching headers
+                        row_data = [
+                            info.get('Filename', 'N/A'),
+                            info.get('Total Traces', 'N/A'),
+                            info.get('Samples per Trace', 'N/A'),
+                            info.get('Sample Interval (ms)', 'N/A'),
+                            info.get('Trace Length (ms)', 'N/A'),
+                            info.get('Time Range', 'N/A'),
+                            info.get('Data Format', 'N/A'),
+                            info.get('Sorting', 'N/A'),
+                            info.get('Inline Range', 'N/A'),
+                            info.get('Crossline Range', 'N/A'),
+                            info.get('Estimated Volume', 'N/A'),
+                            info.get('Amplitude Range', 'N/A'),
+                            info.get('Amplitude Mean', 'N/A'),
+                            info.get('Amplitude Std Dev', 'N/A'),
+                            info.get('Nyquist Frequency (Hz)', 'N/A'),
+                            info.get('Dominant Frequency (Hz)', 'N/A'),
+                            info.get('Null/Dead Traces', 'N/A'),
+                            info.get('Valid Traces', 'N/A'),
+                            info.get('Binary Format Code', 'N/A'),
+                            info.get('Trace Sorting', 'N/A'),
+                            info.get('Endian Type', 'N/A'),
+                            info.get('Measurement System', 'N/A')
+                        ]
+                        
+                        writer.writerow(row_data)
+                        
+                    except Exception as e:
+                        # Write error row for this file
+                        writer.writerow([os.path.basename(file_path), f'Error: {str(e)}'] + ['N/A'] * (len(headers) - 2))
+                
+                # # Write metadata at the end
+                # writer.writerow([])
+                # writer.writerow(['Report Generated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                # writer.writerow(['Total Files Processed', total_files])
+                # writer.writerow(['Source Folder', self.folder_var.get()])
+            
+            self.status_var.set(f"Export complete: {total_files} files exported to CSV.")
+            messagebox.showinfo("Export Successful", f"Data exported successfully to:\n{filepath}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export to CSV:\n{str(e)}")
+            self.status_var.set("Export failed.")
+            
+        finally:
+            self.export_btn.config(state=tk.NORMAL)
 
 # ===================== MAIN APPLICATION =====================
 

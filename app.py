@@ -644,52 +644,79 @@ class LogDataCheckerTab:
             messagebox.showinfo("No Data", "There's no data to export.")
             return
 
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-            title="Export to CSV"
-        )
-
-        if not file_path:
-            return  # User canceled the file dialog
-
         try:
+            # Ask user for save location
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialfile="well_log_qc_report.csv",
+                title="Export to CSV"
+            )
+
+            if not file_path:
+                return  # User canceled the file dialog
+            
+            # Disable export button during processing
+            self.export_btn.config(state=tk.DISABLED)
+            self.status_var.set("Exporting data to CSV...")
+            self.frame.update()
+
+            # Process each file
+            total_files = len(self.file_paths)
+            processed = 0
+        
             with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 
                 # Write header
-                columns = [self.tree.heading(col)["text"] for col in self.tree["columns"]]
-                detail_columns = ["Curve", "Mnemonic", "Min", "Max", "% Filled", "Unit", "Description"]
-                writer.writerow(columns + detail_columns)
+                # headers = [self.tree.heading(col)["text"] for col in self.tree["columns"]] + ["Curve", "Mnemonic", "Min", "Max", "% Filled", "Unit", "Description"]
+                headers = [self.tree.heading(col)["text"] for col in self.tree["columns"]]
+                writer.writerow(headers)
 
                 # Write data
                 for item_id in self.tree.get_children():
-                    values = self.tree.item(item_id)["values"]
-                    filepath = self.file_paths.get(item_id)
-                    
-                    if filepath:
-                        las = LASFileScanner.read_las_file(filepath)
-                        if las:
-                            detailed_info = self.validator.get_detailed_curve_info(las)
-                            for curve, info in detailed_info.items():
-                                detail_row = [
-                                    curve,
-                                    info["mnemonic"],
-                                    info["min"],
-                                    info["max"],
-                                    info["percent_filled"],
-                                    info["unit"],
-                                    info["description"]
-                                ]
-                                writer.writerow(values + detail_row)
-                        else:
-                            writer.writerow(values + ["Error reading LAS file"] * len(detail_columns))
-                    else:
-                        writer.writerow(values + ["File path not found"] * len(detail_columns))
+                    try:
+                        # Update progress
+                        processed += 1
+                        self.status_var.set(f"Exporting {processed}/{total_files}: {os.path.basename(file_path)}")
+                        self.frame.update()
 
+                        values = self.tree.item(item_id)["values"]
+
+                        writer.writerow(values)
+
+                        # filepath = self.file_paths.get(item_id)
+                        
+                        # if filepath:
+                        #     las = LASFileScanner.read_las_file(filepath)
+                        #     if las:
+                        #         detailed_info = self.validator.get_detailed_curve_info(las)
+                                # for curve, info in detailed_info.items():
+                                #     detail_row = [
+                                #         curve,
+                                #         info["mnemonic"],
+                                #         info["min"],
+                                #         info["max"],
+                                #         info["percent_filled"],
+                                #         info["unit"],
+                                #         info["description"]
+                                #     ]
+                                #     writer.writerow(values + detail_row)
+                        #     else:
+                        #         writer.writerow(values + ["Error reading LAS file"] * len(headers))
+                        # else:
+                        #     writer.writerow(values + ["File path not found"] * len(headers))
+                    
+                    except Exception as e:
+                        # Write error row for this file
+                        writer.writerow([os.path.basename(file_path), f'Error: {str(e)}'] + ['N/A'] * (len(headers) - 2))
+            
+            self.status_var.set(f"Export complete: {total_files} files exported to CSV.")
             messagebox.showinfo("Export Successful", f"Data exported to {file_path}")
         except Exception as e:
             messagebox.showerror("Export Error", f"An error occurred while exporting: {str(e)}")
+        finally:
+            self.export_btn.config(state=tk.NORMAL)
 
     def _setup_ui(self):
         """Setup the user interface"""
@@ -2272,12 +2299,6 @@ class Seismic3DQCTab:
                     except Exception as e:
                         # Write error row for this file
                         writer.writerow([os.path.basename(file_path), f'Error: {str(e)}'] + ['N/A'] * (len(headers) - 2))
-                
-                # # Write metadata at the end
-                # writer.writerow([])
-                # writer.writerow(['Report Generated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
-                # writer.writerow(['Total Files Processed', total_files])
-                # writer.writerow(['Source Folder', self.folder_var.get()])
             
             self.status_var.set(f"Export complete: {total_files} files exported to CSV.")
             messagebox.showinfo("Export Successful", f"Data exported successfully to:\n{filepath}")

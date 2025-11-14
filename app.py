@@ -2317,6 +2317,7 @@ class ExplorationDataCheckerApp:
     
     def __init__(self, root):
         root.title("Exploration Data Checker")
+        root.iconbitmap(r"assets/icon.ico")
         root.geometry("1050x600")
         
         notebook = ttk.Notebook(root)
